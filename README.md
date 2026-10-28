@@ -124,7 +124,7 @@ This project provides native Firebase plugins for Godot, built as separate modul
 1. **Install Android Build Template:**
    - **Project → Install Android Build Template**
 
-2. **Edit `android/build/build.gradle`:**
+2. **Edit `android/build/build.gradle`** (or leave **Firebase/Configure Gradle** on in the export preset, the default, and the export adds this for you, which also works with `--install-android-build-template` in CI):
 
    > **Important:** The `buildscript` block **must be at the very beginning** of the `build.gradle` file, before any other blocks like `plugins` or `android`.
 

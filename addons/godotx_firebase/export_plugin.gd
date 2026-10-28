@@ -209,6 +209,15 @@ class AndroidExportPlugin extends EditorExportPlugin:
 			"default_value": true
 		})
 
+		# Add the Google Services (and Crashlytics) Gradle plugins to android/build/build.gradle
+		options.append({
+			"option": {
+				"name": "firebase/configure_gradle",
+				"type": TYPE_BOOL
+			},
+			"default_value": true
+		})
+
 		return options
 
 
@@ -231,6 +240,8 @@ class AndroidExportPlugin extends EditorExportPlugin:
 		if get_option("firebase/enable_crashlytics"):
 			var version = get_option("firebase/crashlytics_version")
 			dependencies.append("com.google.firebase:firebase-crashlytics:" + version)
+			# Native crashes, the engine's own included (the AAR doesn't carry its dependencies)
+			dependencies.append("com.google.firebase:firebase-crashlytics-ndk:" + version)
 			print("[Firebase] Adding Crashlytics dependency (v%s)" % version)
 
 		# Messaging
@@ -319,6 +330,44 @@ class AndroidExportPlugin extends EditorExportPlugin:
 		out_file.close()
 
 		print("[Firebase] Copied Android config to " + dest_res_path)
+
+		if get_option("firebase/configure_gradle"):
+			_configure_gradle()
+
+
+	# Adds the Gradle plugins Firebase needs to the Android build template, which
+	# is installed fresh on every CI export (--install-android-build-template), so
+	# a hand edit wouldn't last. Runs before Gradle; does nothing when already done.
+	func _configure_gradle() -> void:
+		const GRADLE_PATH := "res://android/build/build.gradle"
+		const MARKER := "// godotx_firebase"
+		if not FileAccess.file_exists(GRADLE_PATH):
+			push_warning("[Firebase] Android build template not installed: " + GRADLE_PATH)
+			return
+
+		var gradle := FileAccess.get_file_as_string(GRADLE_PATH)
+		if gradle.contains(MARKER):
+			return
+
+		var crashlytics: bool = get_option("firebase/enable_crashlytics")
+		var classpaths := "        classpath 'com.google.gms:google-services:4.4.4'\n"
+		var plugins := "apply plugin: 'com.google.gms.google-services'\n"
+		if crashlytics:
+			classpaths += "        classpath 'com.google.firebase:firebase-crashlytics-gradle:3.0.6'\n"
+			plugins += "apply plugin: 'com.google.firebase.crashlytics'\n"
+
+		# buildscript must come before the plugins block
+		var head := MARKER + "\nbuildscript {\n    repositories {\n        google()\n        mavenCentral()\n    }\n    dependencies {\n" \
+				+ classpaths + "    }\n}\n\n"
+		gradle = head + gradle + "\n" + MARKER + "\n" + plugins
+
+		var out := FileAccess.open(GRADLE_PATH, FileAccess.WRITE)
+		if not out:
+			push_error("[Firebase] Could not write " + GRADLE_PATH)
+			return
+		out.store_string(gradle)
+		out.close()
+		print("[Firebase] Added the Firebase Gradle plugins to " + GRADLE_PATH)
 
 	func _get_android_manifest_application_element_contents(platform: EditorExportPlatform, debug: bool) -> String:
 		if not _supports_platform(platform) or not get_option("firebase/privacy_safe_defaults"):
